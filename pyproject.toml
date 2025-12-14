@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rlsimlink"
+version = "0.2.0"
+description = "Middleware that links RL environments to training jobs via Unix sockets"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "wp-bit"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# 添加项目依赖
+# 注意：gymnasium 等 RL 库都在 RL 环境中安装，客户端只需要 numpy 来处理 socket 数据
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["rlsimlink", "rlsimlink.*"]
+
+[tool.setuptools.package-data]
+rlsimlink = ["py.typed"]
+
+[project.scripts]
+rlsimlink = "rlsimlink.cli:main"
