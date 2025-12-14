@@ -4,6 +4,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+# Import extract_socket_id to get socket id from path
+from .src.socket_paths import extract_socket_id
+
 
 # ANSI color codes for terminal output
 class Colors:
@@ -38,7 +41,6 @@ class Logger:
 
     LEVEL_ALIASES = {
         "WARNING": "WARN",
-        "ENV_INFO": "INFO",
         "STEP": "INFO",
     }
 
@@ -84,10 +86,14 @@ class Logger:
             socket_path: Socket path to determine log file location
             log_type: Type of log file ("server" or "client")
         """
-        # Sanitize socket path to create a valid filename
-        # Replace special characters with underscores
-        sanitized = re.sub(r"[^\w\-_.]", "_", socket_path)
-        sanitized = sanitized.strip("_")
+        # Extract socket id from socket path
+        socket_id = extract_socket_id(socket_path)
+
+        # Sanitize socket id to create a valid filename
+        # Keep only alphanumeric, dash, and underscore characters
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", socket_id)
+        if not sanitized:
+            sanitized = "manual"
 
         # Create logs directory relative to this file's location
         # From utils.py in rlsimlink/ -> logs/

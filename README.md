@@ -25,7 +25,7 @@
    env = RLEnv(
        env_type="atari",
        env_name="BoxingNoFrameskip-v4",
-       socket_id="abc123",  # matches --socket-id from the serving side
+       # socket_id="abc123",  # optional: auto-generated if omitted
    )
    obs, info = env.reset()
    for _ in range(1000):
@@ -36,7 +36,7 @@
    env.close()
    ```
 
-If you prefer to specify a full path instead of an id you can pass `--socket-path /dev/shm/custom/socket` to `serve` and `socket_path="/dev/shm/custom/socket"` to `RLEnv`.
+If you prefer to specify a full path instead of an id you can pass `--socket-path /dev/shm/custom/socket` to `serve` and `socket_path="/dev/shm/custom/socket"` to `RLEnv`. When you omit both `socket_id` and `socket_path`, `RLEnv` auto-generates a shared-memory directory, starts the Atari server in the `atari` conda environment via `conda run -n atari rlsimlink serve`, and cleans it up when you call `env.close()`.
 
 ## CLI
 

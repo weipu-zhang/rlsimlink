@@ -17,12 +17,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--socket-id",
         type=str,
-        required=True,
-        help="Socket identifier passed to `rlsimlink serve --socket-id` inside the environment",
+        default=None,
+        help="Optional socket identifier. If omitted, RLEnv auto-generates one and launches the server.",
     )
     args = parser.parse_args()
 
-    env = RLEnv(env_type="atari", env_name=args.env_name, socket_id=args.socket_id)
+    env_kwargs = {}
+    if args.socket_id:
+        env_kwargs["socket_id"] = args.socket_id
+
+    env = RLEnv(env_type="atari", env_name=args.env_name, **env_kwargs)
     action_space = ActionSpace(env.action_space_info, expand_dim=False)
     obs, info = env.reset()
     print(obs.shape)

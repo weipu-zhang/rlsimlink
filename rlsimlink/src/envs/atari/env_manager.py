@@ -5,6 +5,7 @@ Atari environment manager for handling environment creation and operations.
 from typing import Any, Dict, Optional, Tuple
 import numpy as np
 from .build_env import build_single_atari_env
+from rlsimlink.utils import print_log, Colors
 
 
 class AtariEnvManager:
@@ -31,6 +32,7 @@ class AtariEnvManager:
 
         # Build the environment
         self.env = build_single_atari_env(env_name, seed, image_size)
+        print_log("LINK", f"Environment created: {Colors.PURPLE}Atari: {env_name}{Colors.ENDC}")
 
     def reset(self, **kwargs) -> Tuple[Any, Dict[str, Any]]:
         """Reset the environment.
@@ -79,7 +81,9 @@ class AtariEnvManager:
             "created": self.env is not None,
         }
 
-    def get_action_space(self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None) -> Dict[str, Any]:
+    def get_action_space(
+        self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None
+    ) -> Dict[str, Any]:
         """Get action space information by creating a dummy environment.
 
         Args:
@@ -101,33 +105,21 @@ class AtariEnvManager:
         """
         # Create a temporary dummy environment
         dummy_env = build_single_atari_env(env_name, seed, image_size)
-        
+
         try:
             # Get action space from the environment
             action_space = dummy_env.action_space
-            
+
             # For Atari, action space is Discrete
             from gymnasium.spaces import Discrete
-            
+
             if isinstance(action_space, Discrete):
-                action_space_info = {
-                    "dimensions": 1,
-                    "spaces": [
-                        {
-                            "type": "discrete",
-                            "n": int(action_space.n)
-                        }
-                    ]
-                }
+                action_space_info = {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_space.n)}]}
             else:
                 # Fallback for unexpected action space types
-                action_space_info = {
-                    "dimensions": 0,
-                    "spaces": []
-                }
-            
+                action_space_info = {"dimensions": 0, "spaces": []}
+
             return action_space_info
         finally:
             # Clean up the dummy environment
             dummy_env.close()
-
