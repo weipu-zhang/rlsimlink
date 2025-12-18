@@ -105,12 +105,7 @@ class RLEnv:
             print_log("ERROR", f"Failed to reset environment: {response.get('message')}")
             raise RuntimeError(f"Failed to reset environment: {response.get('message')}")
 
-        obs_path = response.get("observation_path")
-        obs = (
-            SocketManager.load_observation_from_shm(obs_path)
-            if obs_path is not None
-            else SocketManager.deserialize_observation(response.get("observation"))
-        )
+        obs = self._socket_manager.extract_observation(response)
         info = response.get("info", {})
         self._initialized = True
 
@@ -125,7 +120,7 @@ class RLEnv:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
         # Serialize action to JSON-serializable format
-        serialized_action = SocketManager.serialize_action(action)
+        serialized_action = self._socket_manager.serialize_action(action)
 
         message = {
             "operation": "step",
@@ -139,12 +134,7 @@ class RLEnv:
             print_log("ERROR", f"Failed to step environment: {response.get('message')}")
             raise RuntimeError(f"Failed to step environment: {response.get('message')}")
 
-        obs_path = response.get("observation_path")
-        obs = (
-            SocketManager.load_observation_from_shm(obs_path)
-            if obs_path is not None
-            else SocketManager.deserialize_observation(response.get("observation"))
-        )
+        obs = self._socket_manager.extract_observation(response)
         reward = float(response.get("reward", 0.0))
         terminated = bool(response.get("terminated", False))
         truncated = bool(response.get("truncated", False))

@@ -5,16 +5,14 @@ import socket
 from json import JSONDecodeError
 import os
 import sys
-import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
-import numpy as np
 
 # Import color utilities from the shared logger utilities module
 from rlsimlink.utils import Colors, print_log, set_log_socket_path
 from .common import SocketManager
 from .envs import create_env_manager
-from .socket_paths import extract_socket_id, resolve_observation_path
+from .socket_paths import extract_socket_id
 
 
 class RLEnvServer:
@@ -32,12 +30,11 @@ class RLEnvServer:
 
         self.socket_path = socket_path
         self.socket_id = self._extract_socket_id(socket_path)
-        self.obs_file_path = self._build_obs_path()
         self.env_manager = None  # Environment manager instance
         self.env_type = None
         self.env_name = None
-        self.server_socket = None
         self.running = False
+        self._socket_manager = SocketManager(socket_path, log_fn=print_log, role="server")
 
         # Initialize logger with socket path
         set_log_socket_path(socket_path)
@@ -57,26 +54,6 @@ class RLEnvServer:
     def _extract_socket_id(self, socket_path: str) -> str:
         """Derive socket identifier from socket path."""
         return extract_socket_id(socket_path)
-
-    def _build_obs_path(self) -> Path:
-        """Build shared-memory observation file path."""
-        if self.socket_id != "manual":
-            return resolve_observation_path(self.socket_id, create_parent=True)
-
-        base_dir = Path(self.socket_path).parent
-        base_dir.mkdir(parents=True, exist_ok=True)
-        return base_dir / "obs"
-
-    def _save_observation(self, obs: Any) -> str:
-        """Persist observation to shared memory and return the path."""
-        try:
-            self.obs_file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.obs_file_path, "wb") as f:
-                np.save(f, obs, allow_pickle=False)
-            return str(self.obs_file_path)
-        except Exception as exc:
-            print_log("ERROR", f"Failed to save observation: {exc}")
-            raise
 
     def create_environment(self, env_type: str, env_name: str, seed: Optional[int] = None, **kwargs):
         """Create the environment instance.
@@ -113,60 +90,6 @@ class RLEnvServer:
             print_log("ERROR", f"Failed to create environment {env_type}:{env_name}: {e}")
             raise RuntimeError(f"Failed to create environment {env_type}:{env_name}: {e}")
 
-    def serialize_observation(self, obs: Any) -> Any:
-        """Serialize observation (numpy array) to JSON-serializable format.
-
-        Args:
-            obs: Observation (numpy array or other)
-
-        Returns:
-            JSON-serializable observation
-        """
-        if isinstance(obs, np.ndarray):
-            return obs.tolist()
-        elif hasattr(obs, "tolist"):
-            return obs.tolist()
-        else:
-            return obs
-
-    def deserialize_action(self, action_data: Any) -> Any:
-        """Deserialize action from JSON format to appropriate type.
-
-        Args:
-            action_data: Action data (typically a list from JSON)
-
-        Returns:
-            Deserialized action (list or single value depending on action space)
-        """
-        if isinstance(action_data, list):
-            # For single discrete action, unwrap the list
-            if len(action_data) == 1:
-                return action_data[0]
-            # For multi-dimensional actions, keep as list
-            return action_data
-        else:
-            # Already in correct format
-            return action_data
-
-    def serialize_info(self, info: Dict[str, Any]) -> Dict[str, Any]:
-        """Serialize info dictionary to JSON-serializable format.
-
-        Args:
-            info: Info dictionary
-
-        Returns:
-            JSON-serializable info dictionary
-        """
-        serialized = {}
-        for key, value in info.items():
-            if isinstance(value, (np.ndarray, np.generic)):
-                serialized[key] = value.tolist() if hasattr(value, "tolist") else float(value)
-            elif isinstance(value, (int, float, str, bool, list, dict, type(None))):
-                serialized[key] = value
-            else:
-                serialized[key] = str(value)
-        return serialized
-
     def handle_reset(self, **kwargs) -> Dict[str, Any]:
         """Reset the environment.
 
@@ -188,11 +111,12 @@ class RLEnvServer:
             f"Environment reset successfully (obs shape: {observation.shape if hasattr(observation, 'shape') else 'N/A'})",
         )
 
-        return {
+        payload = {
             "status": "ok",
-            "observation_path": self._save_observation(observation),
-            "info": self.serialize_info(info),
+            "info": self._socket_manager.serialize_info(info),
         }
+        self._socket_manager.attach_observation(payload, observation)
+        return payload
 
     def handle_step(self, action: Any) -> Dict[str, Any]:
         """Step in the environment.
@@ -208,29 +132,19 @@ class RLEnvServer:
             return {"status": "error", "message": "Environment not created"}
 
         # Deserialize action from JSON format
-        deserialized_action = self.deserialize_action(action)
+        deserialized_action = self._socket_manager.deserialize_action(action)
 
         observation, reward, terminated, truncated, info = self.env_manager.step(deserialized_action)
 
-        # Color code the reward output
-        reward_color = Colors.OKGREEN if reward > 0 else Colors.FAIL if reward < 0 else Colors.ENDC
-        status_str = f"reward={reward_color}{reward:.3f}{Colors.ENDC}"
-
-        if terminated:
-            status_str += f" {Colors.WARNING}[TERMINATED]{Colors.ENDC}"
-        if truncated:
-            status_str += f" {Colors.WARNING}[TRUNCATED]{Colors.ENDC}"
-
-        print_log("STEP", f"action={deserialized_action} {status_str}")
-
-        return {
+        payload = {
             "status": "ok",
-            "observation_path": self._save_observation(observation),
             "reward": float(reward),
             "terminated": bool(terminated),
             "truncated": bool(truncated),
-            "info": self.serialize_info(info),
+            "info": self._socket_manager.serialize_info(info),
         }
+        self._socket_manager.attach_observation(payload, observation)
+        return payload
 
     def handle_get_action_space(self, env_type: str, env_name: str, **kwargs) -> Dict[str, Any]:
         """Get action space information without creating the main environment.
@@ -247,17 +161,17 @@ class RLEnvServer:
 
         try:
             # Create a temporary environment manager to get action space
-            temp_manager = create_env_manager(env_type)
+            temp_env_manager = create_env_manager(env_type)
 
             # Get action space information (this creates a dummy env internally)
             if env_type == "atari":
                 image_size = kwargs.get("image_size", None)
                 if image_size is not None:
                     image_size = tuple(image_size)
-                action_space_info = temp_manager.get_action_space(env_name, kwargs.get("seed"), image_size)
+                action_space_info = temp_env_manager.get_action_space(env_name, kwargs.get("seed"), image_size)
             else:
                 # For future environment types
-                action_space_info = temp_manager.get_action_space(env_name, kwargs.get("seed"), **kwargs)
+                action_space_info = temp_env_manager.get_action_space(env_name, kwargs.get("seed"), **kwargs)
 
             print_log("SUCCESS", f"Action space retrieved: {action_space_info}")
 
@@ -358,11 +272,11 @@ class RLEnvServer:
         try:
             while True:
                 try:
-                    message = SocketManager.receive_json_message(client_socket)
+                    message = self._socket_manager.receive_message(client_socket)
                 except JSONDecodeError as e:
                     print_log("ERROR", f"Invalid JSON received: {str(e)}")
                     error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
-                    SocketManager.send_json_message(client_socket, error_response)
+                    self._socket_manager.send_message(client_socket, error_response)
                     continue
 
                 if message is None:
@@ -370,11 +284,11 @@ class RLEnvServer:
 
                 try:
                     response = self.handle_message(message)
-                    SocketManager.send_json_message(client_socket, response)
+                    self._socket_manager.send_message(client_socket, response)
                 except Exception as handler_error:
                     print_log("ERROR", f"Failed to handle message: {handler_error}")
                     error_response = {"status": "error", "message": str(handler_error)}
-                    SocketManager.send_json_message(client_socket, error_response)
+                    self._socket_manager.send_message(client_socket, error_response)
         except Exception as e:
             print_log("ERROR", f"Error handling client: {e}")
         finally:
@@ -384,26 +298,14 @@ class RLEnvServer:
     def start(self):
         """Start the Unix socket server."""
         print_log("INFO", "Starting Unix socket server...")
-
-        self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server_socket.bind(self.socket_path)
-        self.server_socket.listen(5)
+        self._socket_manager.start_server()
         self.running = True
-
-        # Set socket permissions to allow access from host
-        os.chmod(self.socket_path, 0o666)
-        print_log("INFO", f"Socket permissions set to 0o666")
-
-        print_log("LINK", f"Server listening on: {Colors.ORANGE}{self.socket_path}{Colors.ENDC}")
         print_log("INFO", "Waiting for client connections...")
 
         while self.running:
             try:
-                client_socket, _ = self.server_socket.accept()
-                # Handle each client in a separate thread
-                thread = threading.Thread(target=self.handle_client, args=(client_socket,))
-                thread.daemon = True
-                thread.start()
+                client_socket = self._socket_manager.accept_client()
+                self.handle_client(client_socket)
             except Exception as e:
                 if self.running:
                     print_log("ERROR", f"Error accepting connection: {e}")
@@ -413,9 +315,7 @@ class RLEnvServer:
         print_log("INFO", "Stopping server...")
 
         self.running = False
-        if self.server_socket:
-            self.server_socket.close()
-            print_log("INFO", "Server socket closed")
+        self._socket_manager.close()
 
         # Remove socket file
         if os.path.exists(self.socket_path):
