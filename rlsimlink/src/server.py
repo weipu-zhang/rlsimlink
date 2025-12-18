@@ -71,17 +71,7 @@ class RLEnvServer:
         try:
             # Create environment manager for the given type
             self.env_manager = create_env_manager(env_type)
-
-            # Handle environment-specific parameters
-            if env_type == "atari":
-                image_size = kwargs.get("image_size", None)
-                if image_size is not None:
-                    image_size = tuple(image_size)
-                    print_log("INFO", f"Image size: {image_size}")
-                self.env_manager.create(env_name, seed, image_size)
-            else:
-                # For future environment types
-                self.env_manager.create(env_name, seed, **kwargs)
+            self.env_manager.create(env_name, seed, **kwargs)
 
             self.env_type = env_type
             self.env_name = env_name
@@ -146,7 +136,9 @@ class RLEnvServer:
         self._socket_manager.attach_observation(payload, observation)
         return payload
 
-    def handle_get_action_space(self, env_type: str, env_name: str, seed: Optional[int] = None, **kwargs) -> Dict[str, Any]:
+    def handle_get_action_space(
+        self, env_type: str, env_name: str, seed: Optional[int] = None, **kwargs
+    ) -> Dict[str, Any]:
         """Get action space information from the initialized environment."""
         print_log("INFO", f"Getting action space for: {Colors.BOLD}{env_type}/{env_name}{Colors.ENDC}")
 
@@ -179,9 +171,7 @@ class RLEnvServer:
 
         seed = message.get("seed", None)
         env_kwargs = {
-            k: v
-            for k, v in message.items()
-            if k not in ["operation", "env_type", "env_name", "seed", "kwargs"]
+            k: v for k, v in message.items() if k not in ["operation", "env_type", "env_name", "seed", "kwargs"]
         }
 
         # Normalize Atari image_size tuple if present

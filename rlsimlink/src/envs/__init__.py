@@ -17,9 +17,16 @@ def create_env_manager(env_type: str) -> Any:
     """
     if env_type == "atari":
         from .atari import AtariEnvManager
+
         return AtariEnvManager()
+    if env_type == "dmlab":
+        from .dmlab import DMLabEnvManager
+
+        return DMLabEnvManager()
     else:
-        raise ValueError(f"Unsupported environment type: {env_type}. Currently only 'atari' is supported.")
+        raise ValueError(
+            f"Unsupported environment type: {env_type}. Currently supported types: 'atari', 'dmlab'."
+        )
 
 
 __all__ = ["create_env_manager"]
