@@ -1,8 +1,14 @@
-import os
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
+
+import numpy as np
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - OpenCV is required at runtime but optional for import
+    cv2 = None
 
 # Import extract_socket_id to get socket id from path
 from .src.socket_paths import extract_socket_id
@@ -79,26 +85,17 @@ class Logger:
         self.log_level = log_level_upper
         self.log_level_value = self.LOG_LEVELS[log_level_upper]
 
-    def set_log_file(self, socket_path: str, log_type: str = "server"):
-        """Set log file based on socket path.
+    def set_log_file(self, socket_id: str, log_type: str = "server"):
+        """Set log file based on socket identifier.
 
         Args:
-            socket_path: Socket path to determine log file location
-            log_type: Type of log file ("server" or "client")
+            socket_id: Identifier used to group logs
+            log_type: Type of log file ("server", "client", etc.)
         """
-        # Extract socket id from socket path
-        socket_id = extract_socket_id(socket_path)
+        resolved_id = socket_id or "manual"
 
-        # Sanitize socket id to create a valid filename
-        # Keep only alphanumeric, dash, and underscore characters
-        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", socket_id)
-        if not sanitized:
-            sanitized = "manual"
-
-        # Create logs directory relative to this file's location
-        # From utils.py in rlsimlink/ -> logs/
         utils_dir = Path(__file__).parent  # rlsimlink/
-        log_dir = utils_dir / "logs" / sanitized
+        log_dir = utils_dir / "logs" / resolved_id
         log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create log file based on type (server.log or client.log)
@@ -165,20 +162,56 @@ class Logger:
                 # If logging to file fails, just print to console
                 print(f"{Colors.WARNING}[WARN]{Colors.ENDC} Failed to write to log file: {e}")
 
+    def save_snapshot(self, filename: str, observation: Any):
+        """Save an observation snapshot next to the log file."""
+        if observation is None:
+            self.log("WARN", "No observation provided; skipping snapshot save.")
+            return
+        if self.log_file is None:
+            self.log("WARN", "Log file not configured; cannot determine snapshot directory.")
+            return
+        if cv2 is None:
+            self.log("WARN", "OpenCV not available; cannot save snapshot.")
+            return
+
+        image = np.asarray(observation)
+        if image.size == 0:
+            self.log("WARN", "Observation empty; skipping snapshot save.")
+            return
+
+        if image.ndim == 3 and image.shape[-1] == 3:
+            image_to_save = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        else:
+            image_to_save = image
+
+        writer = getattr(cv2, "imsave", None)
+        if writer is None:
+            writer = cv2.imwrite
+
+        output_path = self.log_file.parent / filename
+        try:
+            success = writer(str(output_path), image_to_save)
+            if success is False:
+                raise RuntimeError("cv2 writer reported failure")
+            self.log("SUCCESS", f"Saved snapshot to {output_path}")
+        except Exception as exc:  # pragma: no cover - filesystem errors are non-deterministic
+            self.log("WARN", f"Failed to write snapshot {output_path}: {exc}")
+
 
 # Global logger instance
 _logger = Logger.get_instance()
 
 
-def set_log_socket_path(socket_path: str, log_type: str = "server"):
-    """Set the socket path for logging.
-
-    Args:
-        socket_path: Socket path to determine log file location
-        log_type: Type of log file ("server" or "client")
-    """
+def set_log_socket_id(socket_id: str, log_type: str = "server"):
+    """Configure logging based on a socket identifier."""
     global _logger
-    _logger.set_log_file(socket_path, log_type)
+    _logger.set_log_file(socket_id, log_type)
+
+
+def set_log_socket_path(socket_path: str, log_type: str = "server"):
+    """Backwards-compatible helper that accepts a socket path."""
+    socket_id = extract_socket_id(socket_path)
+    set_log_socket_id(socket_id, log_type)
 
 
 def set_log_level(log_level: str):
@@ -205,6 +238,12 @@ def print_log(level: str, message: str):
     """
     global _logger
     _logger.log(level, message)
+
+
+def save_snapshot(filename: str, observation: Any):
+    """Persist an observation using the configured logger directory."""
+    global _logger
+    _logger.save_snapshot(filename, observation)
 
 
 def _print_info(message: str):

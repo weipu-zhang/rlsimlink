@@ -4,7 +4,6 @@ import re
 import zlib
 
 import deepmind_lab
-import elements
 import numpy as np
 
 
@@ -51,26 +50,6 @@ class DMLab:
                 .astype(np.float32)
             )
         self._done = True
-
-    @property
-    def obs_space(self):
-        spaces = {
-            "image": elements.Space(np.uint8, self._size + (3,)),
-            "reward": elements.Space(np.float32),
-            "is_first": elements.Space(bool),
-            "is_last": elements.Space(bool),
-            "is_terminal": elements.Space(bool),
-        }
-        if self._text:
-            spaces["instr"] = elements.Space(np.float32, self._instr_length * self._embed_size)
-        return spaces
-
-    @property
-    def act_space(self):
-        return {
-            "action": elements.Space(np.int32, (), 0, len(self._actions)),
-            "reset": elements.Space(bool),
-        }
 
     def step(self, action):
         if action["reset"] or self._done:

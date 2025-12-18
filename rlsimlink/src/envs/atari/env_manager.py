@@ -3,9 +3,10 @@ Atari environment manager for handling environment creation and operations.
 """
 
 from typing import Any, Dict, Optional, Tuple
-import numpy as np
+
+from rlsimlink.src.common import ActionSpace
 from .build_env import build_single_atari_env
-from rlsimlink.utils import print_log, Colors
+from rlsimlink.utils import Colors, print_log
 
 
 class AtariEnvManager:
@@ -68,6 +69,53 @@ class AtariEnvManager:
             self.env.close()
             self.env = None
 
+    def _describe_observation(self, observation: Any) -> str:
+        """Return a friendly description of the observation payload."""
+        if hasattr(observation, "shape"):
+            return f"ndarray shape={tuple(observation.shape)}"
+        if isinstance(observation, (list, tuple)):
+            return f"{type(observation).__name__} len={len(observation)}"
+        return type(observation).__name__
+
+    def test_env(self) -> Dict[str, Any]:
+        """Run a lightweight smoke test on the managed environment."""
+        if self.env is None:
+            raise RuntimeError("Environment not created. Call create() first.")
+
+        print_log("INFO", f"Resetting {Colors.BOLD}{self.env_name}{Colors.ENDC} for smoke test...")
+        observation, info = self.reset()
+        observation_desc = self._describe_observation(observation)
+        print_log("SUCCESS", f"Reset observation -> {observation_desc}")
+        print_log("INFO", f"Reset info: {info}")
+
+        action_space_info = self.get_action_space(self.env_name, self.seed, self.image_size)
+        print_log("INFO", f"Action space metadata: {action_space_info}")
+
+        action_space = ActionSpace(action_space_info, expand_dim=False)
+        random_action = action_space.sample()
+        print_log("INFO", f"Sampled random action: {random_action}")
+        observation, reward, terminated, truncated, step_info = self.step(random_action)
+        post_observation_desc = self._describe_observation(observation)
+        print_log(
+            "SUCCESS",
+            f"Step result -> reward={reward:.4f}, terminated={terminated}, truncated={truncated}, obs={post_observation_desc}",
+        )
+        print_log("INFO", f"Step info: {step_info}")
+
+        return {
+            "reset_observation": observation_desc,
+            "reset_info": info,
+            "action_space": action_space_info,
+            "reset_raw_observation": observation,
+            "step": {
+                "action": random_action,
+                "reward": reward,
+                "terminated": terminated,
+                "truncated": truncated,
+                "info": step_info,
+            },
+        }
+
     def get_info(self) -> Dict[str, Any]:
         """Get environment information.
 
@@ -84,24 +132,16 @@ class AtariEnvManager:
     def get_action_space(
         self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None
     ) -> Dict[str, Any]:
-        """Get action space information using the managed env when available."""
-        target_env = self.env
-        cleanup_env = None
+        """Get action space information using the already created environment."""
+        if self.env is None:
+            raise RuntimeError("Environment not created. Call create() before querying action space.")
 
-        if target_env is None:
-            cleanup_env = build_single_atari_env(env_name, seed, image_size)
-            target_env = cleanup_env
+        action_space = self.env.action_space
 
-        try:
-            action_space = target_env.action_space
+        # For Atari, action space is Discrete
+        from gymnasium.spaces import Discrete
 
-            # For Atari, action space is Discrete
-            from gymnasium.spaces import Discrete
-
-            if isinstance(action_space, Discrete):
-                return {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_space.n)}]}
-            # Fallback for unexpected action space types
-            return {"dimensions": 0, "spaces": []}
-        finally:
-            if cleanup_env is not None:
-                cleanup_env.close()
+        if isinstance(action_space, Discrete):
+            return {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_space.n)}]}
+        # Fallback for unexpected action space types
+        return {"dimensions": 0, "spaces": []}

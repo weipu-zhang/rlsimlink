@@ -53,6 +53,7 @@ RUN pip install -U pip setuptools
 
 # DMLab
 RUN wget -O - https://gist.githubusercontent.com/danijar/ca6ab917188d2e081a8253b3ca5c36d3/raw/install-dmlab.sh | sh
+RUN pip install opencv-python
 
 # Create workspace directory
 RUN mkdir -p /root/rlsimlink && mkdir -p /dev/shm/rlsimlink
