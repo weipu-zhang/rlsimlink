@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .src.server import RLEnvServer
-from .src.socket_paths import extract_socket_id, generate_socket_id, resolve_socket_path
+from .src.socket_paths import generate_socket_id, resolve_socket_path
 from .docker.docker import add_docker_subparser as _add_docker_subparser
 from .docker.docker import main as _docker_main
 from .utils import Colors, print_log, set_log_level, set_log_socket_path
@@ -47,12 +47,6 @@ def main():
         help="Socket identifier. The Unix socket will be created under /dev/shm/rlsimlink/<id>/socket.",
     )
     serve_parser.add_argument(
-        "--socket-path",
-        type=str,
-        default=None,
-        help="Explicit Unix socket path. Overrides --socket-id if provided.",
-    )
-    serve_parser.add_argument(
         "--log-level",
         type=str,
         default="LINK",
@@ -64,17 +58,10 @@ def main():
     args = parser.parse_args()
 
     if args.command == "serve":
-        if args.socket_path and args.socket_id:
-            parser.error("Provide either --socket-path or --socket-id, not both.")
-
         set_log_level(args.log_level)
 
-        if args.socket_path:
-            socket_path = str(Path(args.socket_path).expanduser())
-            socket_id = extract_socket_id(socket_path)
-        else:
-            socket_id = args.socket_id or generate_socket_id()
-            socket_path = str(resolve_socket_path(socket_id, create_parent=True))
+        socket_id = args.socket_id or generate_socket_id()
+        socket_path = str(resolve_socket_path(socket_id, create_parent=True))
 
         Path(socket_path).parent.mkdir(parents=True, exist_ok=True)
 

@@ -9,22 +9,7 @@ from pathlib import Path
 SHM_NAMESPACE = "rlsimlink"
 SOCKET_FILENAME = "socket"
 OBS_FILENAME = "obs"
-
-
-def _namespace_root(create: bool = False) -> Path:
-    """Return the base shared-memory directory (/dev/shm/rlsimlink)."""
-    base = Path("/dev/shm") / SHM_NAMESPACE
-    if create:
-        base.mkdir(parents=True, exist_ok=True)
-    return base
-
-
-def sanitize_socket_id(socket_id: str) -> str:
-    """Sanitize the socket identifier, keeping only [-_a-zA-Z0-9]."""
-    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", (socket_id or "").strip())
-    if not sanitized:
-        raise ValueError("socket_id must contain at least one alphanumeric character")
-    return sanitized
+SHM_ROOT = Path("/dev/shm") / SHM_NAMESPACE
 
 
 def generate_socket_id(num_bytes: int = 4) -> str:
@@ -36,9 +21,10 @@ def generate_socket_id(num_bytes: int = 4) -> str:
 
 def socket_dir(socket_id: str, *, create: bool = False) -> Path:
     """Return the directory inside /dev/shm assigned to a socket id."""
-    sanitized = sanitize_socket_id(socket_id)
-    base = _namespace_root(create=create)
-    path = base / sanitized
+    base = SHM_ROOT
+    if create:
+        base.mkdir(parents=True, exist_ok=True)
+    path = base / socket_id
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path
@@ -78,12 +64,12 @@ def format_socket_path(socket_id: str) -> str:
 __all__ = [
     "OBS_FILENAME",
     "SHM_NAMESPACE",
+    "SHM_ROOT",
     "SOCKET_FILENAME",
     "extract_socket_id",
     "format_socket_path",
     "generate_socket_id",
     "resolve_observation_path",
     "resolve_socket_path",
-    "sanitize_socket_id",
     "socket_dir",
 ]
