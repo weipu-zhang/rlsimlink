@@ -9,6 +9,8 @@ from pathlib import Path
 
 from .src.server import RLEnvServer
 from .src.socket_paths import extract_socket_id, generate_socket_id, resolve_socket_path
+from .docker.docker import add_docker_subparser as _add_docker_subparser
+from .docker.docker import main as _docker_main
 from .utils import Colors, print_log, set_log_level, set_log_socket_path
 
 
@@ -57,6 +59,8 @@ def main():
         help="Minimum log level (ERROR, WARN, LINK, SUCCESS, INFO). Default: LINK.",
     )
 
+    _add_docker_subparser(subparsers)
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -77,6 +81,8 @@ def main():
         print_log("INFO", "Share this id with the training process to connect via rlsimlink.RLEnv.")
 
         _run_server(socket_path)
+    elif args.command == "docker":
+        _docker_main(args)
     else:
         parser.print_help()
         sys.exit(1)

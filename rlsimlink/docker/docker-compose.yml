@@ -1,0 +1,22 @@
+services:
+  # DMLab environment: Complete DMLab setup with CUDA
+  rlsimlink-dmlab:
+    build:
+      context: ./dockerfiles
+      dockerfile: Dockerfile.dmlab
+      network: host
+      args:
+        HTTP_PROXY: ${http_proxy:-}
+        HTTPS_PROXY: ${https_proxy:-}
+    image: wp-bit/rlsimlink:dmlab
+    hostname: ${HOSTNAME:-rl-container}
+    network_mode: "host"
+    privileged: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
