@@ -6,7 +6,7 @@
 
 - **Environment agnostic** – works with any Python environment; no Docker daemon required.
 - **Shared-memory transport** – `/dev/shm/rlsimlink/<socket-id>/` stores the Unix socket and numpy observations for fast handoff.
-- **Deterministic socket IDs** – pass a short `--socket-id` when serving and use the same id on the client to connect.
+- **Automatic socket IDs** – client launches always auto-generate their own socket directories and clean them up on close.
 - **Hash-code logging** – every socket id creates its own rotating logs under `rlsimlink/logs/`.
 
 ## Workflow
@@ -25,7 +25,6 @@
    env = RLEnv(
        env_type="atari",
        env_name="BoxingNoFrameskip-v4",
-       # socket_id="abc123",  # optional: auto-generated if omitted
    )
    obs, info = env.reset()
    for _ in range(1000):
@@ -36,7 +35,7 @@
    env.close()
    ```
 
-If you prefer to specify a full path instead of an id you can pass `--socket-path /dev/shm/custom/socket` to `serve` and `socket_path="/dev/shm/custom/socket"` to `RLEnv`. When you omit both `socket_id` and `socket_path`, `RLEnv` auto-generates a shared-memory directory, starts the Atari server in the `atari` conda environment via `conda run -n atari rlsimlink serve`, and cleans it up when you call `env.close()`.
+`RLEnv` automatically provisions a shared-memory directory, launches the environment server, and cleans up the socket once you call `env.close()`. If you need to connect to a long-running server manually, use `rlsimlink serve` directly and communicate using your own socket logic.
 
 ## CLI
 
