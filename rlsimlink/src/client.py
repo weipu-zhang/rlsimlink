@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import os
-import socket
-import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
 from rlsimlink.utils import Colors, print_log, set_log_socket_path
-from .common import ActionSpace
+from .common import ActionSpace, SocketManager
 from .env_runtime import EnvServerLauncher
 from .socket_paths import extract_socket_id, generate_socket_id, resolve_socket_path
 
@@ -27,10 +24,7 @@ class RLEnv:
         socket_path: Optional[str] = None,
         seed: Optional[int] = None,
         socket_id: Optional[str] = None,
-        auto_start: bool = True,
-        wait_for_socket: bool = True,
         socket_wait_timeout: float = 15.0,
-        launcher: Optional[EnvServerLauncher] = None,
         **kwargs,
     ):
         """Initialize RL environment client.
@@ -41,10 +35,7 @@ class RLEnv:
             socket_path: Optional explicit Unix socket path
             seed: Random seed forwarded to the server when reset() is first called
             socket_id: Optional socket identifier (maps to /dev/shm/rlsimlink/<id>/socket)
-            auto_start: Whether to auto-generate socket path and launch the environment server
-            wait_for_socket: Whether to wait for the socket to become available
             socket_wait_timeout: Seconds to wait while polling for the socket
-            launcher: Optional custom launcher for managing the environment server
             **kwargs: Additional environment-specific arguments (image_size, etc.)
         """
         print_log("INFO", f"Initializing RLEnv: {Colors.PURPLE}{env_type}/{env_name}{Colors.ENDC}")
@@ -68,23 +59,18 @@ class RLEnv:
         self.seed = seed
         self.env_kwargs = kwargs
         self.socket_wait_timeout = socket_wait_timeout
-        self.wait_for_socket = wait_for_socket
-        self.auto_start = auto_start
-        self.socket = None
         self._initialized = False
         self._server_started = False
-        self._launcher = launcher or EnvServerLauncher(env_type)
+        self._launcher = EnvServerLauncher(env_type)
+        self._socket_manager = SocketManager(self.socket_path, self.socket_wait_timeout, log_fn=print_log)
 
         print_log("INFO", f"Using socket path: {Colors.ORANGE}{self.socket_path}{Colors.ENDC}")
 
         # Initialize logger for client with socket path
         set_log_socket_path(self.socket_path, log_type="client")
 
-        if self.auto_start:
-            self._start_server()
-
-        if self.wait_for_socket:
-            self._wait_for_socket_ready()
+        # Always start the server when creating an RLEnv client
+        self._start_server()
 
         # Connect to socket
         self._connect()
@@ -102,49 +88,9 @@ class RLEnv:
             print_log("ERROR", f"Failed to auto-start server: {exc}")
             raise
 
-    def _wait_for_socket_ready(self):
-        """Wait until the Unix socket file is ready for connections."""
-        print_log("INFO", f"Waiting for socket to be ready (timeout: {self.socket_wait_timeout}s)...")
-        deadline = time.time() + self.socket_wait_timeout
-        socket_file = Path(self.socket_path)
-
-        while time.time() < deadline:
-            if socket_file.exists():
-                try:
-                    test_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    test_socket.settimeout(0.2)
-                    test_socket.connect(self.socket_path)
-                    test_socket.close()
-                    print_log("SUCCESS", "Socket is ready for connections")
-                    return
-                except (ConnectionRefusedError, FileNotFoundError, OSError):
-                    time.sleep(0.2)
-                    continue
-            else:
-                time.sleep(0.2)
-
-        print_log("ERROR", f"Socket not ready after {self.socket_wait_timeout} seconds")
-        raise RuntimeError(f"Socket at {self.socket_path} not ready after {self.socket_wait_timeout} seconds")
-
     def _connect(self):
-        """Connect to Unix socket."""
-        print_log("INFO", f"Connecting to Unix socket at {self.socket_path}...")
-        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            self.socket.connect(self.socket_path)
-            print_log("LINK", f"Connected to Unix socket at {Colors.ORANGE}{self.socket_path}{Colors.ENDC}")
-        except ConnectionRefusedError:
-            print_log("ERROR", "Connection refused")
-            raise RuntimeError(
-                f"Could not connect to Unix socket at {self.socket_path}. "
-                "Make sure `rlsimlink serve` is running in the environment."
-            )
-        except FileNotFoundError:
-            print_log("ERROR", "Socket file not found")
-            raise RuntimeError(
-                f"Unix socket not found at {self.socket_path}. "
-                "Make sure `rlsimlink serve` created the socket and is running."
-            )
+        """Wait for the socket to be ready, then connect."""
+        self._socket_manager.connect()
 
     def _get_action_space(self) -> Dict[str, Any]:
         """Get action space information from the server."""
@@ -174,34 +120,15 @@ class RLEnv:
 
     def _send_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Send message to server and receive response."""
-        if self.socket is None:
+        if self._socket_manager.socket is None:
             raise RuntimeError("Socket not connected")
 
-        # Serialize message
-        message_json = json.dumps(message).encode("utf-8")
-        message_length = len(message_json)
+        self._socket_manager.send_json(message)
+        response = self._socket_manager.receive_json()
 
-        # Send message length + message
-        self.socket.send(message_length.to_bytes(4, byteorder="big"))
-        self.socket.send(message_json)
+        if response is None:
+            raise RuntimeError("Failed to receive response from server")
 
-        # Receive response length
-        length_bytes = self.socket.recv(4)
-        if not length_bytes or len(length_bytes) < 4:
-            raise RuntimeError("Failed to receive response length")
-
-        response_length = int.from_bytes(length_bytes, byteorder="big")
-
-        # Receive response data
-        data = b""
-        while len(data) < response_length:
-            chunk = self.socket.recv(response_length - len(data))
-            if not chunk:
-                raise RuntimeError("Failed to receive complete response")
-            data += chunk
-
-        # Parse response
-        response = json.loads(data.decode("utf-8"))
         return response
 
     def _serialize_action(self, action: Any) -> Any:
@@ -319,11 +246,7 @@ class RLEnv:
 
     def close(self):
         """Close the environment and socket connection."""
-        if self.socket:
-            print_log("INFO", "Closing socket connection...")
-            self.socket.close()
-            self.socket = None
-            print_log("SUCCESS", "Socket closed successfully")
+        self._socket_manager.close()
 
         if self._server_started:
             self._launcher.stop()
@@ -344,3 +267,8 @@ class RLEnv:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.close()
+
+    @property
+    def socket(self):
+        """Expose the underlying socket managed by SocketManager."""
+        return self._socket_manager.socket

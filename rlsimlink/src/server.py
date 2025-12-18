@@ -2,7 +2,7 @@
 """Unix socket server that exposes RL environments to external processes."""
 
 import socket
-import json
+from json import JSONDecodeError
 import os
 import sys
 import threading
@@ -12,6 +12,7 @@ import numpy as np
 
 # Import color utilities from the shared logger utilities module
 from rlsimlink.utils import Colors, print_log, set_log_socket_path
+from .common import SocketManager
 from .envs import create_env_manager
 from .socket_paths import extract_socket_id, resolve_observation_path
 
@@ -356,40 +357,24 @@ class RLEnvServer:
         print_log("SUCCESS", "Client connected via Unix socket")
         try:
             while True:
-                # Receive message length (4 bytes)
-                length_bytes = client_socket.recv(4)
-                if not length_bytes or len(length_bytes) < 4:
-                    break
+                try:
+                    message = SocketManager.receive_json_message(client_socket)
+                except JSONDecodeError as e:
+                    print_log("ERROR", f"Invalid JSON received: {str(e)}")
+                    error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
+                    SocketManager.send_json_message(client_socket, error_response)
+                    continue
 
-                message_length = int.from_bytes(length_bytes, byteorder="big")
-
-                # Receive message data
-                data = b""
-                while len(data) < message_length:
-                    chunk = client_socket.recv(message_length - len(data))
-                    if not chunk:
-                        break
-                    data += chunk
-
-                if len(data) < message_length:
+                if message is None:
                     break
 
                 try:
-                    message = json.loads(data.decode("utf-8"))
                     response = self.handle_message(message)
-                    response_json = json.dumps(response).encode("utf-8")
-
-                    # Send response length (4 bytes) + response data
-                    response_length = len(response_json)
-                    client_socket.send(response_length.to_bytes(4, byteorder="big"))
-                    client_socket.send(response_json)
-                except json.JSONDecodeError as e:
-                    print_log("ERROR", f"Invalid JSON received: {str(e)}")
-                    error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
-                    error_json = json.dumps(error_response).encode("utf-8")
-                    error_length = len(error_json)
-                    client_socket.send(error_length.to_bytes(4, byteorder="big"))
-                    client_socket.send(error_json)
+                    SocketManager.send_json_message(client_socket, response)
+                except Exception as handler_error:
+                    print_log("ERROR", f"Failed to handle message: {handler_error}")
+                    error_response = {"status": "error", "message": str(handler_error)}
+                    SocketManager.send_json_message(client_socket, error_response)
         except Exception as e:
             print_log("ERROR", f"Error handling client: {e}")
         finally:
