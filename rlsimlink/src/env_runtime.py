@@ -15,28 +15,25 @@ class EnvServerLauncher:
     def __init__(self, env_type: str):
         self.env_type = env_type
         self.process: Optional[subprocess.Popen] = None
-        self.socket_path: Optional[str] = None
+        self.socket_id: Optional[str] = None
 
-    def _build_command(self, socket_path: str) -> list[str]:
+    def _build_command(self, socket_id: str) -> list[str]:
         """Map env_type to the command that starts its server."""
         if self.env_type == "atari":
             # Start rlsimlink server inside the `atari` conda environment
-            return ["conda", "run", "-n", "atari", "rlsimlink", "serve", "--socket-path", socket_path]
+            return ["conda", "run", "-n", "atari", "rlsimlink", "serve", "--socket-id", socket_id]
 
         raise ValueError(f"Auto-launch not implemented for env_type={self.env_type}")
 
-    def start(self, socket_path: str):
+    def start(self, socket_id: str):
         """Start the server process if not already running."""
         if self.process and self.process.poll() is None:
             return
 
-        command = self._build_command(socket_path)
-        self.socket_path = socket_path
+        command = self._build_command(socket_id)
+        self.socket_id = socket_id
 
         print_log("LINK", f"Launching {Colors.PURPLE}{self.env_type}{Colors.ENDC} server via: {' '.join(command)}")
-
-        # Ensure socket directory exists
-        Path(socket_path).parent.mkdir(parents=True, exist_ok=True)
 
         self.process = subprocess.Popen(
             command,
@@ -59,4 +56,4 @@ class EnvServerLauncher:
                 self.process.kill()
 
         self.process = None
-        self.socket_path = None
+        self.socket_id = None

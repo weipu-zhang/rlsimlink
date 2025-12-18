@@ -73,7 +73,7 @@ class RLEnv:
     def _start_server(self):
         """Start the environment server through the launcher."""
         try:
-            self._launcher.start(self.socket_path)
+            self._launcher.start(self.socket_id)
             self._server_started = True
         except Exception as exc:
             print_log("ERROR", f"Failed to auto-start server: {exc}")
