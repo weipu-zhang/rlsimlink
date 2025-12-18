@@ -84,42 +84,24 @@ class AtariEnvManager:
     def get_action_space(
         self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None
     ) -> Dict[str, Any]:
-        """Get action space information by creating a dummy environment.
+        """Get action space information using the managed env when available."""
+        target_env = self.env
+        cleanup_env = None
 
-        Args:
-            env_name: Name of the Atari environment (e.g., "BoxingNoFrameskip-v4")
-            seed: Random seed (optional)
-            image_size: Image size as (height, width) tuple (optional)
-
-        Returns:
-            Dictionary with action space information:
-            {
-                "dimensions": 1,
-                "spaces": [
-                    {
-                        "type": "discrete",
-                        "n": <number of actions>
-                    }
-                ]
-            }
-        """
-        # Create a temporary dummy environment
-        dummy_env = build_single_atari_env(env_name, seed, image_size)
+        if target_env is None:
+            cleanup_env = build_single_atari_env(env_name, seed, image_size)
+            target_env = cleanup_env
 
         try:
-            # Get action space from the environment
-            action_space = dummy_env.action_space
+            action_space = target_env.action_space
 
             # For Atari, action space is Discrete
             from gymnasium.spaces import Discrete
 
             if isinstance(action_space, Discrete):
-                action_space_info = {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_space.n)}]}
-            else:
-                # Fallback for unexpected action space types
-                action_space_info = {"dimensions": 0, "spaces": []}
-
-            return action_space_info
+                return {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_space.n)}]}
+            # Fallback for unexpected action space types
+            return {"dimensions": 0, "spaces": []}
         finally:
-            # Clean up the dummy environment
-            dummy_env.close()
+            if cleanup_env is not None:
+                cleanup_env.close()

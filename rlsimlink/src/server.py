@@ -6,7 +6,7 @@ from json import JSONDecodeError
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 # Import color utilities from the shared logger utilities module
 from rlsimlink.utils import Colors, print_log, set_log_socket_path
@@ -31,8 +31,8 @@ class RLEnvServer:
         self.socket_path = socket_path
         self.socket_id = self._extract_socket_id(socket_path)
         self.env_manager = None  # Environment manager instance
-        self.env_type = None
-        self.env_name = None
+        self.env_type: Optional[str] = None
+        self.env_name: Optional[str] = None
         self.running = False
         self._socket_manager = SocketManager(socket_path, log_fn=print_log, role="server")
 
@@ -100,8 +100,8 @@ class RLEnvServer:
             Response dictionary with observation and info
         """
         if self.env_manager is None:
-            print_log("ERROR", "Environment not created")
-            return {"status": "error", "message": "Environment not created"}
+            print_log("ERROR", "Environment not initialized")
+            return {"status": "error", "message": "Environment not initialized"}
 
         print_log("INFO", f"Resetting environment: {Colors.BOLD}{self.env_type}/{self.env_name}{Colors.ENDC}")
         observation, info = self.env_manager.reset(**kwargs)
@@ -128,8 +128,8 @@ class RLEnvServer:
             Response dictionary with step results
         """
         if self.env_manager is None:
-            print_log("ERROR", "Environment not created")
-            return {"status": "error", "message": "Environment not created"}
+            print_log("ERROR", "Environment not initialized")
+            return {"status": "error", "message": "Environment not initialized"}
 
         # Deserialize action from JSON format
         deserialized_action = self._socket_manager.deserialize_action(action)
@@ -146,100 +146,120 @@ class RLEnvServer:
         self._socket_manager.attach_observation(payload, observation)
         return payload
 
-    def handle_get_action_space(self, env_type: str, env_name: str, **kwargs) -> Dict[str, Any]:
-        """Get action space information without creating the main environment.
-
-        Args:
-            env_type: Environment type (e.g., "atari")
-            env_name: Environment name (e.g., "BoxingNoFrameskip-v4")
-            **kwargs: Additional environment-specific arguments
-
-        Returns:
-            Response dictionary with action space information
-        """
+    def handle_get_action_space(self, env_type: str, env_name: str, seed: Optional[int] = None, **kwargs) -> Dict[str, Any]:
+        """Get action space information from the initialized environment."""
         print_log("INFO", f"Getting action space for: {Colors.BOLD}{env_type}/{env_name}{Colors.ENDC}")
 
+        if self.env_manager is None:
+            message = "Environment not initialized. Call initialize before requesting action space."
+            print_log("ERROR", message)
+            return {"status": "error", "message": message}
+
+        mismatch_response = self._ensure_environment_matches(env_type, env_name)
+        if mismatch_response and mismatch_response.get("status") == "error":
+            return mismatch_response
+
         try:
-            # Create a temporary environment manager to get action space
-            temp_env_manager = create_env_manager(env_type)
-
-            # Get action space information (this creates a dummy env internally)
-            if env_type == "atari":
-                image_size = kwargs.get("image_size", None)
-                if image_size is not None:
-                    image_size = tuple(image_size)
-                action_space_info = temp_env_manager.get_action_space(env_name, kwargs.get("seed"), image_size)
-            else:
-                # For future environment types
-                action_space_info = temp_env_manager.get_action_space(env_name, kwargs.get("seed"), **kwargs)
-
+            action_space_info = self.env_manager.get_action_space(env_name, seed, **kwargs)
             print_log("SUCCESS", f"Action space retrieved: {action_space_info}")
-
             return {"status": "ok", "action_space": action_space_info}
         except Exception as e:
             print_log("ERROR", f"Failed to get action space: {str(e)}")
             return {"status": "error", "message": f"Failed to get action space: {str(e)}"}
 
+    def _extract_env_config(self, message: Dict[str, Any]) -> Tuple[str, str, Optional[int], Dict[str, Any]]:
+        """Parse environment configuration from a message payload."""
+        env_type = message.get("env_type")
+        env_name = message.get("env_name")
+
+        if not env_type:
+            raise ValueError("env_type required")
+        if not env_name:
+            raise ValueError("env_name required")
+
+        seed = message.get("seed", None)
+        env_kwargs = {
+            k: v
+            for k, v in message.items()
+            if k not in ["operation", "env_type", "env_name", "seed", "kwargs"]
+        }
+
+        # Normalize Atari image_size tuple if present
+        if "image_size" in env_kwargs and env_kwargs["image_size"] is not None:
+            env_kwargs["image_size"] = tuple(env_kwargs["image_size"])
+
+        return env_type, env_name, seed, env_kwargs
+
+    def _ensure_environment_matches(self, env_type: str, env_name: str) -> Optional[Dict[str, Any]]:
+        """Validate that the requested env matches the already-created one."""
+        if self.env_manager is None:
+            return None
+
+        if env_type != self.env_type or env_name != self.env_name:
+            message = (
+                "Environment already initialized as "
+                f"{self.env_type}/{self.env_name}, cannot switch to {env_type}/{env_name}"
+            )
+            print_log("ERROR", message)
+            return {"status": "error", "message": message}
+
+        return {"status": "ok", "message": "Environment already initialized"}
+
     def handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Handle incoming message and return response.
 
-        Unified interface: supports reset, step, and get_action_space.
-        Environment is automatically created on first reset if not exists.
+        Unified interface: supports initialize, get_action_space, reset, and step.
+        Environments must be created via an explicit initialize request before use.
 
         Args:
-            message: Incoming message dictionary with "operation" field ("reset", "step", or "get_action_space")
+            message: Incoming message dictionary with "operation" field ("initialize", "get_action_space", "reset", "step")
 
         Returns:
             Response dictionary
         """
         operation = message.get("operation", "")
 
+        if operation == "initialize":
+            try:
+                env_type, env_name, seed, env_kwargs = self._extract_env_config(message)
+            except ValueError as err:
+                return {"status": "error", "message": str(err)}
+
+            if self.env_manager is not None:
+                return self._ensure_environment_matches(env_type, env_name) or {
+                    "status": "ok",
+                    "message": "Environment already initialized",
+                }
+
+            try:
+                print_log("INFO", f"Initializing environment on client request...")
+                self.create_environment(env_type, env_name, seed, **env_kwargs)
+                return {"status": "ok", "message": "Environment ready"}
+            except Exception as exc:
+                return {"status": "error", "message": f"Failed to initialize environment: {exc}"}
+
         if operation == "get_action_space":
-            # Get action space information
-            env_type = message.get("env_type")
-            env_name = message.get("env_name")
+            try:
+                env_type, env_name, seed, env_kwargs = self._extract_env_config(message)
+            except ValueError as err:
+                return {"status": "error", "message": str(err)}
 
-            if not env_type:
-                return {"status": "error", "message": "env_type required for get_action_space"}
-            if not env_name:
-                return {"status": "error", "message": "env_name required for get_action_space"}
-
-            # Extract environment-specific kwargs
-            env_kwargs = {k: v for k, v in message.items() if k not in ["operation", "env_type", "env_name", "seed"]}
-            env_kwargs["seed"] = message.get("seed", None)
-
-            return self.handle_get_action_space(env_type, env_name, **env_kwargs)
+            return self.handle_get_action_space(env_type, env_name, seed, **env_kwargs)
 
         elif operation == "reset":
-            # Get or create environment
-            env_type = message.get("env_type")
-            env_name = message.get("env_name")
+            try:
+                env_type, env_name, _, _ = self._extract_env_config(message)
+            except ValueError as err:
+                return {"status": "error", "message": str(err)}
 
-            if not env_type:
-                return {"status": "error", "message": "env_type required for reset"}
-            if not env_name:
-                return {"status": "error", "message": "env_name required for reset"}
-
-            # Create environment if it doesn't exist
             if self.env_manager is None:
-                try:
-                    print_log("INFO", "Creating environment instance...")
-                    seed = message.get("seed", None)
-                    # Extract environment-specific kwargs (excluding common ones)
-                    env_kwargs = {
-                        k: v
-                        for k, v in message.items()
-                        if k not in ["operation", "env_type", "env_name", "seed", "kwargs"]
-                    }
+                message = "Environment not initialized. Call initialize before reset."
+                print_log("ERROR", message)
+                return {"status": "error", "message": message}
 
-                    # Handle image_size for atari
-                    if "image_size" in env_kwargs and env_kwargs["image_size"] is not None:
-                        env_kwargs["image_size"] = tuple(env_kwargs["image_size"])
-
-                    self.create_environment(env_type, env_name, seed, **env_kwargs)
-                except Exception as e:
-                    print_log("ERROR", f"Failed to create environment: {str(e)}")
-                    return {"status": "error", "message": f"Failed to create environment: {str(e)}"}
+            mismatch_response = self._ensure_environment_matches(env_type, env_name)
+            if mismatch_response and mismatch_response.get("status") == "error":
+                return mismatch_response
 
             # Reset environment
             reset_kwargs = message.get("kwargs", {})
@@ -252,14 +272,17 @@ class RLEnvServer:
                 return {"status": "error", "message": "action required for step"}
 
             if self.env_manager is None:
-                return {"status": "error", "message": "Environment not created. Call reset first."}
+                return {"status": "error", "message": "Environment not initialized. Call initialize first."}
 
             return self.handle_step(action)
 
         else:
             return {
                 "status": "error",
-                "message": f"Unknown operation: {operation}. Supported operations: get_action_space, reset, step",
+                "message": (
+                    "Unknown operation: "
+                    f"{operation}. Supported operations: initialize, get_action_space, reset, step"
+                ),
             }
 
     def handle_client(self, client_socket: socket.socket):

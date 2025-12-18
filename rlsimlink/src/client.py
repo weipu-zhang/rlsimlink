@@ -61,8 +61,9 @@ class RLEnv:
         # Always start the server when creating an RLEnv client
         self._start_server()
 
-        # Connect to socket
+        # Connect to socket and block until the server reports the environment is ready
         self._connect()
+        self._initialize_remote_environment()
 
         # Get action space information and create ActionSpace object
         self.action_space_info = self._socket_manager.get_action_space(
@@ -82,6 +83,30 @@ class RLEnv:
     def _connect(self):
         """Wait for the socket to be ready, then connect."""
         self._socket_manager.connect()
+
+    def _initialize_remote_environment(self):
+        """Send an initialization request and wait until the server finishes building the env."""
+        init_message: Dict[str, Any] = {
+            "operation": "initialize",
+            "env_type": self.env_type,
+            "env_name": self.env_name,
+            "seed": self.seed,
+        }
+
+        init_message.update(self.env_kwargs)
+
+        print_log(
+            "INFO",
+            "Requesting remote environment initialization...",
+        )
+
+        response = self._socket_manager.send_request(init_message)
+
+        if response.get("status") != "ok":
+            print_log("ERROR", f"Failed to initialize remote environment: {response.get('message')}")
+            raise RuntimeError(f"Failed to initialize remote environment: {response.get('message')}")
+
+        print_log("LINK", "Remote environment is ready")
 
     def reset(self, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset the environment."""

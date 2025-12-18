@@ -289,7 +289,7 @@ class RLContainerInterface:
         if self.is_container_running():
             print_log("INFO", f"Stopping the docker container '{self.container_name}'...")
             subprocess.run(
-                ["docker", "stop", self.container_name],
+                ["docker", "kill", self.container_name],
                 check=False,
                 env=self.environ,
             )
@@ -457,7 +457,7 @@ def stop_all_rlsimdock_containers():
     failures = []
     for container_id, name, _ in containers:
         stop_result = subprocess.run(
-            ["docker", "stop", container_id],
+            ["docker", "kill", container_id],
             capture_output=True,
             text=True,
             check=False,
