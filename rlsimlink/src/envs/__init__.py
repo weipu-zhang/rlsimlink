@@ -27,9 +27,13 @@ def create_env_manager(env_type: str) -> Any:
         from .vizdoom import VizDoomEnvManager
 
         return VizDoomEnvManager()
+    if env_type == "minerl":
+        from .minerl import MineRLEnvManager
+
+        return MineRLEnvManager()
     else:
         raise ValueError(
-            f"Unsupported environment type: {env_type}. Currently supported types: 'atari', 'dmlab', 'vizdoom'."
+            f"Unsupported environment type: {env_type}. Currently supported types: 'atari', 'dmlab', 'vizdoom', 'minerl'."
         )
 
 

@@ -85,6 +85,13 @@ def main():
         help="VizDoom environment name. Defaults to VizdoomBasic-v0.",
     )
 
+    minerl_test = test_subparsers.add_parser("minerl", help="Test a MineRL environment.")
+    minerl_test.add_argument(
+        "--env-name",
+        default="MineRLBasaltFindCave-v0",
+        help="MineRL environment name. Defaults to MineRLBasaltFindCave-v0.",
+    )
+
     _add_docker_subparser(subparsers)
 
     args = parser.parse_args()
@@ -113,6 +120,8 @@ def main():
             elif args.env_type == "dmlab":
                 env_manager.create(env_name=args.env_name)
             elif args.env_type == "vizdoom":
+                env_manager.create(args.env_name)
+            elif args.env_type == "minerl":
                 env_manager.create(args.env_name)
             else:
                 raise ValueError(f"Unsupported env_type: {args.env_type}")
