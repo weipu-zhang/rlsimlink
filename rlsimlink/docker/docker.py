@@ -309,8 +309,8 @@ class RLContainerInterface:
         if container_name is None:
             # Interactive mode: list containers and let user choose
             containers = list_running_rlsimdock_containers()
-        if not containers:
-            raise RuntimeError("No running rlsimlink containers found.")
+            if not containers:
+                raise RuntimeError("No running rlsimlink containers found.")
 
             print_log("INFO", "The following rlsimlink containers are currently running:")
             for idx, (container_id, name, status) in enumerate(containers, start=1):
