@@ -23,9 +23,13 @@ def create_env_manager(env_type: str) -> Any:
         from .dmlab import DMLabEnvManager
 
         return DMLabEnvManager()
+    if env_type == "vizdoom":
+        from .vizdoom import VizDoomEnvManager
+
+        return VizDoomEnvManager()
     else:
         raise ValueError(
-            f"Unsupported environment type: {env_type}. Currently supported types: 'atari', 'dmlab'."
+            f"Unsupported environment type: {env_type}. Currently supported types: 'atari', 'dmlab', 'vizdoom'."
         )
 
 

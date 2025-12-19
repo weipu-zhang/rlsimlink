@@ -70,14 +70,6 @@ def main():
         default="BoxingNoFrameskip-v4",
         help="Gymnasium environment name. Defaults to BoxingNoFrameskip-v4.",
     )
-    atari_test.add_argument("--seed", type=int, default=None, help="Optional random seed.")
-    atari_test.add_argument(
-        "--image-size",
-        nargs=2,
-        type=int,
-        metavar=("HEIGHT", "WIDTH"),
-        help="Optional resize target as two integers, e.g. --image-size 84 84.",
-    )
 
     dmlab_test = test_subparsers.add_parser("dmlab", help="Test a DMLab environment.")
     dmlab_test.add_argument(
@@ -85,39 +77,13 @@ def main():
         default="rooms_keys_doors_puzzle",
         help='DMLab level name. Defaults to "rooms_keys_doors_puzzle".',
     )
-    dmlab_test.add_argument("--seed", type=int, default=None, help="Optional seed.")
-    dmlab_test.add_argument("--repeat", type=int, default=4, help="Number of simulator steps per action.")
-    dmlab_test.add_argument(
-        "--size",
-        nargs=2,
-        type=int,
-        metavar=("HEIGHT", "WIDTH"),
-        help="Frame size as HEIGHT WIDTH. Defaults to 64 64.",
+
+    vizdoom_test = test_subparsers.add_parser("vizdoom", help="Test a VizDoom environment.")
+    vizdoom_test.add_argument(
+        "--env-name",
+        default="VizdoomBasic-v0",
+        help="VizDoom environment name. Defaults to VizdoomBasic-v0.",
     )
-    dmlab_test.add_argument(
-        "--mode",
-        choices=["train", "eval"],
-        default="train",
-        help="Environment mode controlling level split.",
-    )
-    dmlab_test.add_argument(
-        "--actions",
-        choices=["impala", "popart"],
-        default="popart",
-        help="Action set to use.",
-    )
-    dmlab_test.add_argument("--episodic", dest="episodic", action="store_true", help="Force episodic termination.")
-    dmlab_test.add_argument(
-        "--no-episodic",
-        dest="episodic",
-        action="store_false",
-        help="Disable episodic termination.",
-    )
-    dmlab_test.add_argument("--text", dest="text", action="store_true", help="Enable instruction text observations.")
-    dmlab_test.add_argument(
-        "--no-text", dest="text", action="store_false", help="Disable instruction text observations."
-    )
-    dmlab_test.set_defaults(episodic=True, text=None)
 
     _add_docker_subparser(subparsers)
 
@@ -143,25 +109,16 @@ def main():
 
         try:
             if args.env_type == "atari":
-                image_size = tuple(args.image_size) if args.image_size else None
-                env_manager.create(args.env_name, seed=args.seed, image_size=image_size)
+                env_manager.create(args.env_name)
             elif args.env_type == "dmlab":
-                size = tuple(args.size) if args.size else (64, 64)
-                env_manager.create(
-                    env_name=args.env_name,
-                    seed=args.seed,
-                    repeat=args.repeat,
-                    size=size,
-                    mode=args.mode,
-                    actions=args.actions,
-                    episodic=args.episodic,
-                    text=args.text,
-                )
+                env_manager.create(env_name=args.env_name)
+            elif args.env_type == "vizdoom":
+                env_manager.create(args.env_name)
             else:
                 raise ValueError(f"Unsupported env_type: {args.env_type}")
 
             test_result = env_manager.test_env()
-            save_snapshot(f"{args.env_type}.png", test_result.get("reset_raw_observation"))
+            save_snapshot(f"{args.env_type}.png", test_result.get("reset_pixel_observation"))
             print_log("SUCCESS", "Environment smoke test complete.")
         except Exception as exc:
             print_log("ERROR", f"Smoke test failed: {exc}")

@@ -144,7 +144,7 @@ def _ensure_container_running(container_name: str):
         detail = result.stderr.strip() or status or "unknown"
         raise RuntimeError(
             f"Container '{container_name}' is not running (details: {detail}). "
-            "Start it via `rlsimlink docker start` before launching an environment."
+            "Start it via `rlsimlink docker start <env_type>` before launching an environment."
         )
 
 

@@ -1,39 +1,36 @@
 """
-Atari environment manager for handling environment creation and operations.
+VizDoom environment manager for handling environment creation and operations.
 """
 
 from typing import Any, Dict, Optional, Tuple
 
 from rlsimlink.src.common import ActionSpace
-from .build_env import build_single_atari_env
+from .build_env import build_single_vizdoom_env
 from rlsimlink.utils import Colors, print_log
 
 
-class AtariEnvManager:
-    """Manager for a single Atari environment instance."""
+class VizDoomEnvManager:
+    """Manager for a single VizDoom environment instance."""
 
     def __init__(self):
-        """Initialize the Atari environment manager."""
+        """Initialize the VizDoom environment manager."""
         self.env = None
         self.env_name = None
         self.seed = None
-        self.image_size = None
 
-    def create(self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None):
-        """Create an Atari environment.
+    def create(self, env_name: str, seed: Optional[int] = None):
+        """Create a VizDoom environment.
 
         Args:
-            env_name: Name of the Atari environment (e.g., "BoxingNoFrameskip-v4")
+            env_name: Name of the VizDoom environment (e.g., "VizdoomBasic-v0")
             seed: Random seed (optional)
-            image_size: Image size as (height, width) tuple (optional)
         """
         self.env_name = env_name
         self.seed = seed
-        self.image_size = image_size
 
         # Build the environment
-        self.env = build_single_atari_env(env_name, seed, image_size)
-        print_log("LINK", f"Environment created: {Colors.PURPLE}Atari: {env_name}{Colors.ENDC}")
+        self.env = build_single_vizdoom_env(env_name)
+        print_log("LINK", f"Environment created: {Colors.PURPLE}VizDoom: {env_name}{Colors.ENDC}")
 
     def reset(self, **kwargs) -> Tuple[Any, Dict[str, Any]]:
         """Reset the environment.
@@ -88,7 +85,7 @@ class AtariEnvManager:
         print_log("SUCCESS", f"Reset observation -> {observation_desc}")
         print_log("INFO", f"Reset info: {info}")
 
-        action_space_info = self.get_action_space(self.env_name, self.seed, self.image_size)
+        action_space_info = self.get_action_space(self.env_name, self.seed)
         print_log("INFO", f"Action space metadata: {action_space_info}")
 
         action_space = ActionSpace(action_space_info, expand_dim=False)
@@ -125,20 +122,17 @@ class AtariEnvManager:
         return {
             "env_name": self.env_name,
             "seed": self.seed,
-            "image_size": self.image_size,
             "created": self.env is not None,
         }
 
-    def get_action_space(
-        self, env_name: str, seed: Optional[int] = None, image_size: Optional[Tuple[int, int]] = None
-    ) -> Dict[str, Any]:
+    def get_action_space(self, env_name: str, seed: Optional[int] = None) -> Dict[str, Any]:
         """Get action space information using the already created environment."""
         if self.env is None:
             raise RuntimeError("Environment not created. Call create() before querying action space.")
 
         action_space = self.env.action_space
 
-        # For Atari, action space is Discrete
+        # For VizDoom, action space is typically Discrete
         from gymnasium.spaces import Discrete
 
         if isinstance(action_space, Discrete):

@@ -109,7 +109,7 @@ class DMLabEnvManager:
             "reset_observation": reset_desc,
             "reset_info": info,
             "action_space": action_space_info,
-            "reset_raw_observation": observation,
+            "reset_pixel_observation": observation,
             "step": {
                 "action": random_action,
                 "reward": reward,
@@ -132,9 +132,7 @@ class DMLabEnvManager:
         action_count = self._extract_action_count(self.env)
         return {"dimensions": 1, "spaces": [{"type": "discrete", "n": int(action_count)}]}
 
-    def _step_internal(
-        self, action_index: int, reset: bool
-    ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    def _step_internal(self, action_index: int, reset: bool) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         payload = {"action": int(action_index), "reset": bool(reset)}
         timestep = self.env.step(payload)
 

@@ -3,3 +3,4 @@
 build.sh
 **/logs
 *.sif
+*.ini
