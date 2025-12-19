@@ -1,0 +1,68 @@
+# Base layer: CUDA base image with essential packages
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04
+
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+ENV NO_PROXY=localhost,127.0.0.1
+ENV no_proxy=localhost,127.0.0.1
+
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Configure apt sources to use Aliyun mirror
+RUN cat > /etc/apt/sources.list.d/ubuntu.sources <<EOF
+Types: deb
+URIs: https://mirrors.aliyun.com/ubuntu/
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: https://mirrors.aliyun.com/ubuntu/
+Suites: noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+
+# From https://github.com/danijar/dreamerv3/blob/b65cf81a6fb13625af8722127459283f899a35d9/Dockerfile
+RUN apt-get update && apt-get install -y \
+  ffmpeg git vim curl software-properties-common grep \
+  libglew-dev x11-xserver-utils xvfb wget \
+  && apt-get clean
+
+# Python
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_ROOT_USER_ACTION=ignore
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt-get update && apt-get install -y python3.11-dev python3.11-venv && apt-get clean
+RUN python3.11 -m venv /venv --upgrade-deps
+ENV PATH="/venv/bin:$PATH"
+# Configure pip to use Tsinghua mirror
+RUN pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+RUN pip install -U pip setuptools
+
+# MineRL
+RUN add-apt-repository ppa:openjdk-r/ppa && \
+  apt-get update && \
+  apt-get install -y \
+  build-essential gcc g++ \
+  openjdk-8-jdk \
+  && apt-get clean
+RUN pip install git+https://github.com/minerllabs/minerl@v1.0.2 opencv-python
+
+# Create workspace directory
+RUN mkdir -p /root/rlsimlink && mkdir -p /dev/shm/rlsimlink
+# Set working directory
+WORKDIR /root/rlsimlink
+# Default command - can be overridden
+CMD ["bash"]

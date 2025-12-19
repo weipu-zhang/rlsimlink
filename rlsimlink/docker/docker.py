@@ -6,7 +6,7 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional
 import argparse
 import grp
 import getpass
@@ -31,6 +31,7 @@ class RLContainerInterface:
         tcp_port: int = 8888,
         use_gpu: bool = True,
         hash_code: str = "manual",
+        env_type: Optional[str] = None,
     ):
         self.work_dir = work_dir.resolve().expanduser()
         self.workspace_target = workspace_target
@@ -42,7 +43,8 @@ class RLContainerInterface:
         repo_root = Path(__file__).resolve().parent
         self.context_dir = repo_root.joinpath("resources")
         self.composefile_path = repo_root.joinpath("docker-compose.yml")
-        self.tag = load_env_version(default="dmlab")
+        selected_env = env_type or load_env_version(default="dmlab")
+        self.tag = selected_env
         self.repo_name = "wp-bit/rlsimlink"
         self.image_id = None
 
@@ -488,8 +490,10 @@ def parse_cli_args(argv: List[str] = None) -> argparse.Namespace:
 
     # Command subparsers
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("start", help="Start the docker container.", parents=[parent_parser])
-    subparsers.add_parser("enter", help="Enter an existing container.", parents=[parent_parser])
+    start_parser = subparsers.add_parser("start", help="Start the docker container.", parents=[parent_parser])
+    start_parser.add_argument("env_type", type=str, help="Environment/image tag to start, e.g. dmlab.")
+    enter_parser = subparsers.add_parser("enter", help="Enter an existing container.", parents=[parent_parser])
+    enter_parser.add_argument("env_type", type=str, help="Environment/image tag whose container to enter.")
     attach_parser = subparsers.add_parser(
         "attach", help="Attach to a running container (interactive or by name).", parents=[parent_parser]
     )
@@ -534,8 +538,10 @@ def add_docker_subparser(subparsers: argparse._SubParsersAction) -> argparse.Arg
     docker_parser = subparsers.add_parser("docker", help="Manage RL simulation docker environments")
     docker_subparsers = docker_parser.add_subparsers(dest="docker_command", required=True)
 
-    docker_subparsers.add_parser("start", help="Start the docker container.")
-    docker_subparsers.add_parser("enter", help="Enter an existing container.")
+    start_parser = docker_subparsers.add_parser("start", help="Start the docker container.")
+    start_parser.add_argument("env_type", type=str, help="Environment/image tag to start, e.g. dmlab.")
+    enter_parser = docker_subparsers.add_parser("enter", help="Enter an existing container.")
+    enter_parser.add_argument("env_type", type=str, help="Environment/image tag whose container to enter.")
 
     attach_parser = docker_subparsers.add_parser(
         "attach", help="Attach to a running container (interactive or by name)."
@@ -586,6 +592,7 @@ def main(args: argparse.Namespace):
     # Create container interface
     container_interface = RLContainerInterface(
         work_dir=Path(os.getcwd()).expanduser(),
+        env_type=getattr(args, "env_type", None),
         # tcp_port=args.port,
         # use_gpu=not args.no_gpu,
     )
