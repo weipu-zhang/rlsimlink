@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: connect to an Atari server started via `rlsimlink serve --socket-id <id>`."""
+"""Example: run an Atari environment managed automatically by rlsimlink."""
 
 import cv2
 from tqdm import tqdm
@@ -14,19 +14,9 @@ if __name__ == "__main__":
     parser.add_argument("--visualize", action="store_true", help="Visualize the environment")
     # env name
     parser.add_argument("--env-name", type=str, default="BoxingNoFrameskip-v4", help="Environment name")
-    parser.add_argument(
-        "--socket-id",
-        type=str,
-        default=None,
-        help="Optional socket identifier. If omitted, RLEnv auto-generates one and launches the server.",
-    )
     args = parser.parse_args()
 
-    env_kwargs = {}
-    if args.socket_id:
-        env_kwargs["socket_id"] = args.socket_id
-
-    env = RLEnv(env_type="atari", env_name=args.env_name, **env_kwargs)
+    env = RLEnv(env_type="atari", env_name=args.env_name)
     action_space = ActionSpace(env.action_space_info, expand_dim=False)
     obs, info = env.reset()
     print(obs.shape)

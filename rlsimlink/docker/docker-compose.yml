@@ -20,3 +20,20 @@ services:
               count: all
               capabilities: [gpu]
 
+  # MineRL environment: Complete MineRL setup with CUDA
+  rlsimlink-minerl:
+    build:
+      context: ./dockerfiles
+      dockerfile: Dockerfile.minerl
+      network: host
+    image: wp-bit/rlsimlink:minerl
+    hostname: ${HOSTNAME:-rl-container}
+    network_mode: "host"
+    privileged: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

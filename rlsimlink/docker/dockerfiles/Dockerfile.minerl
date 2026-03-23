@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y \
   libglew-dev x11-xserver-utils xvfb wget \
   && apt-get clean
 
-# Python (DMLab needs <=3.11)
+# Python
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_ROOT_USER_ACTION=ignore
@@ -51,9 +51,14 @@ ENV PATH="/venv/bin:$PATH"
 RUN pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 RUN pip install -U pip setuptools
 
-# DMLab
-RUN wget -O - https://gist.githubusercontent.com/danijar/ca6ab917188d2e081a8253b3ca5c36d3/raw/install-dmlab.sh | sh
-RUN pip install opencv-python
+# MineRL
+RUN add-apt-repository ppa:openjdk-r/ppa && \
+  apt-get update && \
+  apt-get install -y \
+  build-essential gcc g++ \
+  openjdk-8-jdk \
+  && apt-get clean
+RUN pip install git+https://github.com/minerllabs/minerl@v1.0.2 opencv-python
 
 # Create workspace directory
 RUN mkdir -p /root/rlsimlink && mkdir -p /dev/shm/rlsimlink
